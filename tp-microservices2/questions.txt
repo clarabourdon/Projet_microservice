@@ -1,0 +1,14 @@
+Architecture globale : 
+- Système orienté événements
+- Le microservice commandes agit comme producteur et publie des messages JSON sur le topic commandes-creees
+- Les microservices clients et statistiques agissent comme des Consommateurs indépendants branchés sur ce même topic
+=> Les microservices ne se connaissent pas et ne s'appellent jamais directement en HTTP
+
+Question 1.6 : Les événements produits pendant l’arrêt du microservice clients ont-ils été perdus ?
+Non, aucun message n'est perdu, Kafka garde les messages sur disque dans le topic de manière ordonnée même qd microservuce étein
+Le microservice utilise l'offset (indice de lecture). 
+Quand il redémarre, il regarde où il s'était arrêté dans la file, reprend la lecture à l'offset pas traité puis traite tous les messages arrivés pendant son absence.
+
+Question 1.8 : Quelle différence observez-vous entre les deux configurations ?
+Avec le même group_id, les consommateurs se partagent le travail donc chaque message n'est traité qu'une seule fois par l'un d'eux
+Avec des group_id différents, chaque groupe reçoit sa propre copie de tous les messages, il y a donc diffusion pour que chaque service fasse son travail séparément
