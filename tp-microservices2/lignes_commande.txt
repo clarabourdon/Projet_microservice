@@ -1,0 +1,19 @@
+* Fin des requêtes HTTP directes entre services : découplage complet.
+* commandes devient un Producer => poste un événement commandes-creees dans Kafka et répond immédiatement sans attendre personne.
+* clients et statistiques sont deux Consumers indépendants avec des group_id distincts
+=> chacun reçoit une copie intégrale des événements pour mettre à jour son propre état local
+* Tolérance aux pannes : si un service tombe, Kafka stocke les événements dans le log
+Dès que le service redémarre, il reprend là où son offset s'était arrêté.
+
+# Nettoyage et démarrage de kafka :
+docker rm -f kafka 2>/dev/null || true
+docker compose up -d
+
+# On lance dans 3 terminaux :
+Terminal 1 : python3 commandes/app.py
+Terminal 2 : python3 clients/app.py
+Terminal 3 : python3 statistiques/app.py
+
+curl -X POST http://localhost:8081/commandes -H "Content-Type: application/json" -d "{\"client_id\": 1, \"produit\": \"PC\", \"montant\": 1200}"
+=> Montrer terminaux clients et statistiques qui réagissent et affichent les données reçues
+
