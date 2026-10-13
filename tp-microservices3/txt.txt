@@ -1,0 +1,175 @@
+Le code pour le TP 1 => commandes /app.py
+
+
+import os
+import requests
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+# URL de base du service clients
+CLIENTS_SERVICE_URL = os.environ.get("CLIENTS_SERVICE_URL", "http://localhost:8080")
+
+commandes = [
+    {"id": 1, "client_id": 1, "produit": "PC", "montant": 1200},
+    {"id": 2, "client_id": 2, "produit": "Livre", "montant": 30},
+    {"id": 3, "client_id": 1, "produit": "Casque", "montant": 80}
+]
+
+@app.route('/commandes', methods=['GET'])
+def get_commandes():
+    return jsonify(commandes), 200
+
+@app.route('/commandes/<int:commande_id>', methods=['GET'])
+def get_commande(commande_id):
+    # 1. Récupérer la commande
+    commande = next((c for c in commandes if c["id"] == commande_id), None)
+    if not commande:
+        return jsonify({"erreur": "Commande non trouvée"}), 404
+
+    # 2. Récupérer le client_id
+    client_id = commande["client_id"]
+
+    # 3 & 4. Appeler le microservice clients
+    try:
+        response = requests.get(f"{CLIENTS_SERVICE_URL}/clients/{client_id}", timeout=3)
+        if response.status_code == 200:
+            client_data = response.json()
+        elif response.status_code == 404:
+            return jsonify({"erreur": f"Client {client_id} non trouvé"}), 404
+        else:
+            return jsonify({"erreur": "Erreur inattendue du service clients"}), 502
+    except requests.exceptions.RequestException:
+        return jsonify({"erreur": "Microservice clients indisponible"}), 503
+
+    # 5. Retourner la commande enrichie avec les données client
+    resultat = {
+        "id": commande["id"],
+        "produit": commande["produit"],
+        "montant": commande["montant"],
+        "client": client_data
+    }
+    return jsonify(resultat), 200
+
+if __name__ == '__main__':
+    # On écoute sur le port 8081 en local pour éviter le conflit avec le port 8080 de clients
+    app.run(host='0.0.0.0', port=8081)
+
+-----------------------------------------------
+
+Pareil mais code pour le TP 1 => clients /app.py
+
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+# Données du TP
+clients = [
+    {"id": 1, "nom": "Alice", "pays": "France"},
+    {"id": 2, "nom": "Alex", "pays": "Belgique"},
+    {"id": 3, "nom": "Madeleine", "pays": "France"}
+]
+
+# Endpoint : GET /clients -> Retourner tous les clients
+@app.route('/clients', methods=['GET'])
+def get_clients():
+    return jsonify(clients), 200
+
+# Endpoint : GET /clients/<id> -> Retourner un client par son id
+@app.route('/clients/<int:client_id>', methods=['GET'])
+def get_client(client_id):
+    client = next((c for c in clients if c["id"] == client_id), None)
+    if client:
+        return jsonify(client), 200
+    return jsonify({"erreur": "Client non trouvé"}), 404
+
+if __name__ == '__main__':
+    # Écoute sur toutes les interfaces (0.0.0.0) sur le port 8080
+    app.run(host='0.0.0.0', port=8080)
+
+-----------------------------------------
+
+Code pour TP2 => commandes/ app.py
+
+import os
+import json
+import time
+from datetime import datetime
+from flask import Flask, jsonify, request
+from kafka import KafkaProducer
+
+app = Flask(__name__)
+
+# Adresse du broker Kafka (configurable via variable d'environnement)
+KAFKA_BROKER = os.environ.get("KAFKA_BROKER", "localhost:9092")
+TOPIC_COMMANDES = "commandes-creees"
+
+producer = None
+
+# Fonction de connexion avec réessais (pour attendre que Kafka soit prêt)
+def get_kafka_producer():
+    global producer
+    if producer is not None:
+        return producer
+    for tentative in range(10):
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BROKER,
+                value_serializer=lambda v: json.dumps(v).encode('utf-8')
+            )
+            print(f"Connecté à Kafka ({KAFKA_BROKER}) !")
+            return producer
+        except Exception as e:
+            print(f"En attente de Kafka ({tentative + 1}/10)... Erreur : {e}")
+            time.sleep(2)
+    return None
+
+# Données de base en mémoire
+commandes = [
+    {"commande_id": 1, "client_id": 1, "produit": "PC", "montant": 1200},
+    {"commande_id": 2, "client_id": 2, "produit": "Livre", "montant": 30},
+    {"commande_id": 3, "client_id": 1, "produit": "Casque", "montant": 80}
+]
+
+@app.route('/commandes', methods=['GET'])
+def get_commandes():
+    return jsonify(commandes), 200
+
+# Endpoint pour créer une commande et publier l'événement dans Kafka
+@app.route('/commandes', methods=['POST'])
+def create_commande():
+    data = request.get_json()
+    if not data or not all(k in data for k in ("client_id", "produit", "montant")):
+        return jsonify({"erreur": "Champs requis : client_id, produit, montant"}), 400
+
+    nouvelle_id = len(commandes) + 1
+    # On ajoute la date du mois actuel pour anticiper la section 1.7 (calcul CA par mois)
+    mois_actuel = datetime.now().strftime("%Y-%m")
+
+    nouvel_evenement = {
+        "commande_id": nouvelle_id,
+        "client_id": data["client_id"],
+        "produit": data["produit"],
+        "montant": data["montant"],
+        "mois": mois_actuel
+    }
+
+    commandes.append(nouvel_evenement)
+
+    # Envoi du message JSON dans le topic Kafka
+    prod = get_kafka_producer()
+    if prod:
+        prod.send(TOPIC_COMMANDES, value=nouvel_evenement)
+        prod.flush()
+        print(f"[KAFKA] Événement publié sur {TOPIC_COMMANDES} : {nouvel_evenement}")
+        return jsonify({
+            "message": "Commande créée et publiée dans Kafka",
+            "commande": nouvel_evenement
+        }), 201
+    else:
+        return jsonify({"erreur": "Impossible de joindre Kafka"}), 503
+
+if __name__ == '__main__':
+    # Initialisation au démarrage
+    get_kafka_producer()
+    app.run(host='0.0.0.0', port=8081)

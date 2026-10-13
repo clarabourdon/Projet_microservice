@@ -1,0 +1,11 @@
+Différence entraînement/ prédiction :
+- Entraînement : travail de préparation => se fait une seule fois sur l'historique des données pour créer le modèle et l'enregistrer dans modele_commande.pkl
+- Prédiction : utilisation directe du fichier .pkl => e microservice garde le modèle en mémoire et calcule une probabilité raîdeùent chaque message qui arrive
+
+Résilience à la panne :
+Si un conteneur de prédiction plante, aucun message n'est perdu. Les demandes restent stockées dans Kafka (cf tp 2)
+
+Gérer la montée en charge :
+- On découpe le topic : avec Kafka, une partition ne peut être lue que par un seul consommateur à la fois dans un groupe
+=> Pour faire tourner K conteneurs de prédiction en parallèle, il faut configurer le topic demandes-prediction avec au moins K partitions  
+- Multiplier les conteneurs : on utilise la commande Docker docker compose up -d --scale prediction=K pour démarrer plusieurs copies du microservice et absorber un volume élevé de demandes
