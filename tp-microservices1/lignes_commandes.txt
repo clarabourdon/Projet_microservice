@@ -1,0 +1,24 @@
+# Création du réseau Docker
+docker network create reseau-tp
+
+# Construction des images clients et commandes
+docker build -t microservice-clients ./clients
+docker build -t microservice-commandes ./commandes
+
+# Lancement des deux conteneurs
+docker run -d --name clients --network reseau-tp -p 8080:8080 microservice-clients
+docker run -d --name commandes --network reseau-tp -p 8081:8081 -e CLIENTS_SERVICE_URL=http://clients:8080 microservice-commandes
+
+Et en + tests :
+
+test direct sur client :
+curl http://localhost:8080/clients
+
+appel REST de commandes vers clients :
+curl http://localhost:8081/commandes/1
+
+erreur client inexistany:
+curl http://localhost:8080/clients/100
+
+commande inexistante :
+curl http://localhost:8081/commandes/100
