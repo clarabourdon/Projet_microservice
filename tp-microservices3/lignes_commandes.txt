@@ -1,0 +1,19 @@
+* On sépare l'entraînement de l'inférence
+* Double flux Kafka :
+    - commandes poste les 6 variables clients sur le topic demandes-prediction.
+    - Le conteneur prediction applique le modèle Random Forest et poste sa probabilité sur resultats-prediction.
+    - commandes écoute ce second topic et affiche le verdict.
+
+# Nettoyage et démarrage des conteneurs
+docker rm -f kafka microservice-prediction 2>/dev/null || true
+docker compose up -d --build
+
+# On lance commandes
+python3 commandes/app.py
+
+# Test d'une demande de prédiction
+curl -X POST http://localhost:8081/predict -H "Content-Type: application/json" -d "{\"client_id\": 25, \"age\": 32, \"anciennete\": 3, \"nombre_commandes\": 8, \"montant_total\": 1250, \"montant_moyen\": 156.25, \"jours_depuis_derniere_commande\": 12}"
+=> on regarde terminal commandes
+
+# En + flux continu
+python3 simulateur_flux.py
